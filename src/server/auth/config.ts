@@ -1,6 +1,8 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type DefaultSession, type NextAuthConfig } from "next-auth";
 import DiscordProvider from "next-auth/providers/discord";
+import GoogleProvider from "next-auth/providers/google";
+import { env } from "~/env";
 
 import { db } from "~/server/db";
 
@@ -32,7 +34,11 @@ declare module "next-auth" {
  */
 export const authConfig = {
   providers: [
-    DiscordProvider,
+    // DiscordProvider,
+    GoogleProvider({
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+    }),
     /**
      * ...add more providers here.
      *
@@ -44,13 +50,38 @@ export const authConfig = {
      */
   ],
   adapter: PrismaAdapter(db),
+  // secret: env.AUTH_SECRET,
   callbacks: {
-    session: ({ session, user }) => ({
-      ...session,
-      user: {
-        ...session.user,
-        id: user.id,
-      },
-    }),
+    async redirect({ url, baseUrl }) {
+      // Allows relative callback URLs
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      // Allows callback URLs on the same origin
+      else if (new URL(url).origin === baseUrl) return url;
+      return baseUrl;
+    },
+    async jwt({ token, user }) {
+      console.log("callback user", user);
+      if (user) {
+        token.uid = user.id;
+        token.userId = user.id;
+      }
+      console.log({ user }, { token });
+
+      return token;
+    },
+    async session({ session, user, token }) {
+      if (session.user) {
+        session.user.id = token?.uid as string;
+      }
+
+      console.log({ session }, { user }, { token });
+      return session;
+    },
+  },
+  pages: {
+    signIn: "/",
+  },
+  session: {
+    strategy: "jwt", // Use JWT strategy for sessions
   },
 } satisfies NextAuthConfig;
